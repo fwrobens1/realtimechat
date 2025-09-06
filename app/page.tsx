@@ -1,3 +1,5 @@
+'use client'
+
 import { AuthForm } from "@/components/auth/auth-form"
 import { WebchatInterface } from "@/components/webchat-interface"
 import { useAuth } from "@/hooks/useAuth"
