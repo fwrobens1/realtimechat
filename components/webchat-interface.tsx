@@ -1,12 +1,14 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { FileImage, Smile, Send, Plus, Settings, User, X, Reply } from "lucide-react"
+import { FileImage, Smile, Send, Plus, Settings, User, X, Reply, LogOut } from "lucide-react"
+import { useAuth } from "@/hooks/useAuth"
+import { supabase } from "@/lib/supabase"
 
 interface Message {
   id: string
@@ -30,68 +32,21 @@ interface Conversation {
   avatar?: string
 }
 
-const mockConversations: Conversation[] = [
+const defaultConversations: Conversation[] = [
   {
     id: "1",
     name: "General",
-    lastMessage: "Welcome to the general chat!",
-    timestamp: new Date(Date.now() - 1000 * 60 * 5),
-  },
-  {
-    id: "2",
-    name: "Development Team",
-    lastMessage: "Meeting at 3 PM today",
-    timestamp: new Date(Date.now() - 1000 * 60 * 30),
-  },
-  {
-    id: "3",
-    name: "Design Discussion",
-    lastMessage: "New mockups are ready for review",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2),
-  },
-  {
-    id: "4",
-    name: "Random Chat",
-    lastMessage: "Anyone up for lunch?",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 4),
-  },
-]
-
-const mockMessages: Message[] = [
-  {
-    id: "1",
-    content: "Welcome to the general chat! Feel free to discuss anything here.",
-    sender: "other",
-    timestamp: new Date(Date.now() - 1000 * 60 * 10),
-    senderName: "Admin",
-  },
-  {
-    id: "2",
-    content: "Thanks! This looks like a great place to connect with everyone.",
-    sender: "user",
-    timestamp: new Date(Date.now() - 1000 * 60 * 8),
-    senderName: "You",
-  },
-  {
-    id: "3",
-    content: "We're excited to have you here. Don't hesitate to ask questions or share ideas.",
-    sender: "other",
-    timestamp: new Date(Date.now() - 1000 * 60 * 5),
-    senderName: "Admin",
-  },
-  {
-    id: "4",
-    content: "I'm looking forward to collaborating with everyone on upcoming projects.",
-    sender: "user",
-    timestamp: new Date(Date.now() - 1000 * 60 * 2),
-    senderName: "You",
+    lastMessage: "Start chatting...",
+    timestamp: new Date(),
   },
 ]
 
 export function WebchatInterface() {
+  const { user, profile, signOut } = useAuth()
   const [selectedConversation, setSelectedConversation] = useState<string>("1")
   const [message, setMessage] = useState("")
-  const [messages, setMessages] = useState<Message[]>(mockMessages)
+  const [messages, setMessages] = useState<Message[]>([])
+  const [conversations, setConversations] = useState<Conversation[]>(defaultConversations)
   const [isSending, setIsSending] = useState(false)
   const [isTyping, setIsTyping] = useState(false)
   const [showNewChatModal, setShowNewChatModal] = useState(false)
@@ -99,37 +54,85 @@ export function WebchatInterface() {
   const [replyingTo, setReplyingTo] = useState<Message | null>(null)
   const [hoveredMessage, setHoveredMessage] = useState<string | null>(null)
 
+  useEffect(() => {
+    if (user && selectedConversation) {
+      loadMessages(selectedConversation)
+    }
+  }, [user, selectedConversation])
+
+  const loadMessages = async (conversationId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select(`
+          *,
+          profiles!messages_user_id_fkey (username)
+        `)
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true })
+
+      if (error) throw error
+
+      const formattedMessages: Message[] = data.map((msg: any) => ({
+        id: msg.id,
+        content: msg.content,
+        sender: msg.user_id === user?.id ? 'user' : 'other',
+        timestamp: new Date(msg.created_at),
+        senderName: msg.user_id === user?.id ? 'You' : msg.profiles.username,
+        replyTo: msg.reply_to ? {
+          id: msg.reply_to,
+          content: '', // We'd need to fetch this separately if needed
+          senderName: ''
+        } : undefined
+      }))
+
+      setMessages(formattedMessages)
+    } catch (error) {
+      console.error('Error loading messages:', error)
+    }
+  }
+
   const handleSendMessage = async () => {
-    if (message.trim()) {
+    if (message.trim() && user) {
       setIsSending(true)
 
-      const newMessage: Message = {
-        id: Date.now().toString(),
-        content: message,
-        sender: "user",
-        timestamp: new Date(),
-        senderName: "You",
-        sending: true,
-        replyTo: replyingTo
-          ? {
-              id: replyingTo.id,
-              content: replyingTo.content,
-              senderName: replyingTo.senderName,
-            }
-          : undefined,
-      }
+      try {
+        const { data, error } = await supabase
+          .from('messages')
+          .insert({
+            conversation_id: selectedConversation,
+            user_id: user.id,
+            content: message.trim(),
+            reply_to: replyingTo?.id || null
+          })
+          .select()
+          .single()
 
-      setMessages([...messages, newMessage])
-      setMessage("")
-      setReplyingTo(null)
+        if (error) throw error
 
-      setTimeout(() => {
-        setMessages((prev) => prev.map((msg) => (msg.id === newMessage.id ? { ...msg, sending: false } : msg)))
+        const newMessage: Message = {
+          id: data.id,
+          content: data.content,
+          sender: "user",
+          timestamp: new Date(data.created_at),
+          senderName: "You",
+          replyTo: replyingTo
+            ? {
+                id: replyingTo.id,
+                content: replyingTo.content,
+                senderName: replyingTo.senderName,
+              }
+            : undefined,
+        }
+
+        setMessages([...messages, newMessage])
+        setMessage("")
+        setReplyingTo(null)
+      } catch (error) {
+        console.error('Error sending message:', error)
+      } finally {
         setIsSending(false)
-
-        setIsTyping(true)
-        setTimeout(() => setIsTyping(false), 2000)
-      }, 500)
+      }
     }
   }
 
@@ -138,6 +141,14 @@ export function WebchatInterface() {
       console.log("Creating new chat:", newChatName)
       setNewChatName("")
       setShowNewChatModal(false)
+    }
+  }
+
+  const handleSignOut = async () => {
+    try {
+      await signOut()
+    } catch (error) {
+      console.error('Error signing out:', error)
     }
   }
 
@@ -155,7 +166,7 @@ export function WebchatInterface() {
     })
   }
 
-  const selectedConv = mockConversations.find((c) => c.id === selectedConversation)
+  const selectedConv = conversations.find((c) => c.id === selectedConversation)
 
   const handleReply = (message: Message) => {
     setReplyingTo(message)
@@ -208,20 +219,41 @@ export function WebchatInterface() {
         <div className="p-4 border-b border-sidebar-border">
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-semibold text-sidebar-foreground">Chats</h1>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-8 w-8 p-0 text-sidebar-foreground hover:bg-sidebar-accent transition-all duration-200 hover:scale-105"
-              onClick={() => setShowNewChatModal(true)}
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 w-8 p-0 text-sidebar-foreground hover:bg-sidebar-accent transition-all duration-200 hover:scale-105"
+                onClick={() => setShowNewChatModal(true)}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
+          {profile && (
+            <div className="mt-3 p-2 bg-slate-800/30 rounded-lg">
+              <div className="flex items-center gap-2">
+                <Avatar className="h-6 w-6">
+                  <AvatarFallback className="bg-slate-600 text-white text-xs">
+                    {profile.username.charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-sidebar-foreground truncate">
+                    {profile.username}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {profile.is_guest ? 'Guest' : 'Member'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <ScrollArea className="flex-1">
           <div className="p-1">
-            {mockConversations.map((conversation) => (
+            {conversations.map((conversation) => (
               <div
                 key={conversation.id}
                 onClick={() => setSelectedConversation(conversation.id)}
@@ -265,11 +297,12 @@ export function WebchatInterface() {
               Settings
             </Button>
             <Button
+              onClick={handleSignOut}
               size="sm"
               variant="ghost"
               className="h-8 w-8 p-0 text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-200"
             >
-              <User className="h-3 w-3" />
+              <LogOut className="h-3 w-3" />
             </Button>
           </div>
         </div>
