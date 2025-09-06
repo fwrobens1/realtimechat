@@ -10,6 +10,9 @@ import { FileImage, Smile, Send, Plus, Settings, User, X, Reply, LogOut } from "
 import { useAuth } from "@/hooks/useAuth"
 import { supabase } from "@/lib/supabase"
 
+// Generate a proper UUID for the default conversation
+const GENERAL_CONVERSATION_ID = "00000000-0000-0000-0000-000000000001"
+
 interface Message {
   id: string
   content: string
@@ -34,7 +37,7 @@ interface Conversation {
 
 const defaultConversations: Conversation[] = [
   {
-    id: "1",
+    id: GENERAL_CONVERSATION_ID,
     name: "General",
     lastMessage: "Start chatting...",
     timestamp: new Date(),
@@ -43,7 +46,7 @@ const defaultConversations: Conversation[] = [
 
 export function WebchatInterface() {
   const { user, profile, signOut } = useAuth()
-  const [selectedConversation, setSelectedConversation] = useState<string>("1")
+  const [selectedConversation, setSelectedConversation] = useState<string>(GENERAL_CONVERSATION_ID)
   const [message, setMessage] = useState("")
   const [messages, setMessages] = useState<Message[]>([])
   const [conversations, setConversations] = useState<Conversation[]>(defaultConversations)
