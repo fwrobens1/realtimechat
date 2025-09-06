@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { FileImage, Smile, Send, Plus, Settings, User, X } from "lucide-react"
+import { FileImage, Smile, Send, Plus, Settings, User, X, Reply } from "lucide-react"
 
 interface Message {
   id: string
@@ -15,6 +15,11 @@ interface Message {
   timestamp: Date
   senderName: string
   sending?: boolean
+  replyTo?: {
+    id: string
+    content: string
+    senderName: string
+  }
 }
 
 interface Conversation {
@@ -91,6 +96,8 @@ export function WebchatInterface() {
   const [isTyping, setIsTyping] = useState(false)
   const [showNewChatModal, setShowNewChatModal] = useState(false)
   const [newChatName, setNewChatName] = useState("")
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null)
+  const [hoveredMessage, setHoveredMessage] = useState<string | null>(null)
 
   const handleSendMessage = async () => {
     if (message.trim()) {
@@ -103,10 +110,18 @@ export function WebchatInterface() {
         timestamp: new Date(),
         senderName: "You",
         sending: true,
+        replyTo: replyingTo
+          ? {
+              id: replyingTo.id,
+              content: replyingTo.content,
+              senderName: replyingTo.senderName,
+            }
+          : undefined,
       }
 
       setMessages([...messages, newMessage])
       setMessage("")
+      setReplyingTo(null)
 
       setTimeout(() => {
         setMessages((prev) => prev.map((msg) => (msg.id === newMessage.id ? { ...msg, sending: false } : msg)))
@@ -141,6 +156,14 @@ export function WebchatInterface() {
   }
 
   const selectedConv = mockConversations.find((c) => c.id === selectedConversation)
+
+  const handleReply = (message: Message) => {
+    setReplyingTo(message)
+  }
+
+  const cancelReply = () => {
+    setReplyingTo(null)
+  }
 
   return (
     <div className="flex h-screen bg-background">
@@ -279,8 +302,10 @@ export function WebchatInterface() {
                 className={`flex ${msg.sender === "user" ? "justify-end" : "justify-start"} ${
                   msg.sending ? "animate-pulse" : "animate-in slide-in-from-bottom-2 duration-300"
                 }`}
+                onMouseEnter={() => setHoveredMessage(msg.id)}
+                onMouseLeave={() => setHoveredMessage(null)}
               >
-                <div className="flex items-end gap-2 max-w-xs lg:max-w-md">
+                <div className="flex items-end gap-2 max-w-xs lg:max-w-md relative">
                   {msg.sender === "other" && (
                     <Avatar className="h-7 w-7">
                       <AvatarImage src="/placeholder.svg" />
@@ -299,16 +324,35 @@ export function WebchatInterface() {
                         : "bg-slate-800/60 text-white rounded-bl-sm border border-slate-600/50"
                     } ${msg.sending ? "opacity-70" : "opacity-100"}`}
                   >
+                    {msg.replyTo && (
+                      <div className="mb-2 pl-2 border-l-2 border-slate-500/50">
+                        <p className="text-xs text-slate-400 font-medium">{msg.replyTo.senderName}</p>
+                        <p className="text-xs text-slate-300 line-clamp-1 max-w-[200px] truncate">
+                          {msg.replyTo.content.length > 50
+                            ? `${msg.replyTo.content.substring(0, 50)}...`
+                            : msg.replyTo.content}
+                        </p>
+                      </div>
+                    )}
                     <p className="text-sm leading-relaxed">{msg.content}</p>
                     <p className="text-xs opacity-60 mt-1 flex items-center gap-1">
                       {formatTime(msg.timestamp)}
                       {msg.sending && <span className="animate-spin">⏳</span>}
                     </p>
                   </div>
+                  {msg.sender === "other" && hoveredMessage === msg.id && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => handleReply(msg)}
+                      className="absolute -top-2 right-0 h-6 w-6 bg-slate-700/80 hover:bg-slate-600/80 text-white rounded-full opacity-0 animate-in fade-in-0 duration-200 opacity-100"
+                    >
+                      <Reply className="h-3 w-3" />
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
-
             {isTyping && (
               <div className="flex justify-start animate-in slide-in-from-bottom-2 duration-300">
                 <div className="flex items-end gap-2 max-w-xs lg:max-w-md">
@@ -342,6 +386,27 @@ export function WebchatInterface() {
         </ScrollArea>
 
         <div className="p-4 bg-background">
+          {replyingTo && (
+            <div className="mb-2 p-2 bg-slate-800/30 rounded-lg border-l-2 border-slate-500/50 flex items-center justify-between">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <Reply className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                  <span className="text-xs text-slate-300 font-medium">Replying to {replyingTo.senderName}</span>
+                </div>
+                <p className="text-xs text-slate-400 truncate max-w-[300px]">
+                  {replyingTo.content.length > 60 ? `${replyingTo.content.substring(0, 60)}...` : replyingTo.content}
+                </p>
+              </div>
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={cancelReply}
+                className="h-6 w-6 text-slate-400 hover:text-white flex-shrink-0 ml-2"
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
           <div className="flex items-center gap-3">
             <Button
               size="icon"
@@ -350,7 +415,6 @@ export function WebchatInterface() {
             >
               <FileImage className="h-5 w-5" />
             </Button>
-
             <div className="flex-1 relative">
               <Input
                 value={message}
@@ -368,7 +432,6 @@ export function WebchatInterface() {
                 <Smile className="h-4 w-4" />
               </Button>
             </div>
-
             <Button
               onClick={handleSendMessage}
               size="icon"
